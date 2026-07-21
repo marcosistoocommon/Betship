@@ -1,0 +1,109 @@
+{% extends 'base.html' %}
+{% block title %}Bet {{ bet.id }} | Betship{% endblock %}
+{% block content %}
+<div class="grid grid-2">
+    <section class="card">
+        <span class="pill">Bet #{{ bet.id }}</span>
+        <h2>{{ bet.title or 'Untitled bet' }}</h2>
+        <p class="muted">{{ bet.description or 'No description provided.' }}</p>
+        <div class="odds-row" style="margin: 18px 0;">
+            <span class="pill">Yes quota {{ bet.yesodds }}</span>
+            <span class="pill">No quota {{ bet.noodds }}</span>
+            <span class="pill">State {{ bet.state }}</span>
+            {% if bet.result %}
+            <span class="pill">Result {{ bet.result }}</span>
+            {% endif %}
+        </div>
+
+        {% if bet.state == 'open' and (not user or user.id != bet.creator) %}
+        <form class="form-grid" method="post">
+            <div class="split">
+                <label>
+                    Select result
+                    <select name="selected_result" id="selected_result" required>
+                        <option value="yes">Yes</option>
+                        <option value="no">No</option>
+                    </select>
+                </label>
+                <label>
+                    Amount betted
+                    <input type="number" name="amount_betted" id="amount_betted" min="0.01" step="0.01" value="10" required>
+                </label>
+            </div>
+            <div class="preview" id="preview">
+                Expected win: 0.00 Marcoins
+            </div>
+            <div class="actions">
+                <button class="button button-primary" type="submit">Place wager</button>
+                <a class="button button-ghost" href="{{ url_for('bets_list') }}">Back to list</a>
+            </div>
+        </form>
+        {% elif bet.state == 'open' %}
+        <p class="muted">You created this bet, so you cannot place a wager on it.</p>
+        {% else %}
+        <p class="muted">This bet is closed. No more wagers can be placed.</p>
+        {% endif %}
+
+        {% if user and user.id == bet.creator and bet.state == 'open' %}
+        <div class="card soft" style="margin-top: 18px;">
+            <h3>Creator tools</h3>
+            <form method="post" action="{{ url_for('bet_close', bet_id=bet.id) }}" class="form-grid">
+                <label>
+                    Final result
+                    <select name="result" required>
+                        <option value="yes">Yes</option>
+                        <option value="no">No</option>
+                    </select>
+                </label>
+                <div class="actions">
+                    <button class="button button-secondary" type="submit">Close bet and pay winners</button>
+                </div>
+            </form>
+            <form method="post" action="{{ url_for('bet_delete', bet_id=bet.id) }}" style="margin-top: 12px;">
+                <button class="button button-danger" type="submit">Delete bet</button>
+            </form>
+        </div>
+        {% endif %}
+    </section>
+
+    <section class="card soft">
+        <span class="pill">Current wagers</span>
+        <h3>Who is in this bet</h3>
+        {% if wagers %}
+        <div class="compact-list">
+            {% for wager in wagers %}
+            <div class="compact-item">
+                <div>
+                    <strong>{{ wager.username }}</strong><br>
+                    <span class="fine">Selected {{ wager.selected_result }} | Amount {{ '%.2f'|format(wager.amount_betted) }}</span>
+                </div>
+            </div>
+            {% endfor %}
+        </div>
+        {% else %}
+        <p class="muted">Nobody has wagered on this bet yet.</p>
+        {% endif %}
+    </section>
+</div>
+
+<script>
+    (function () {
+        const yesOdds = {{ bet.yesodds }};
+        const noOdds = {{ bet.noodds }};
+        const amountInput = document.getElementById('amount_betted');
+        const resultSelect = document.getElementById('selected_result');
+        const preview = document.getElementById('preview');
+
+        function updatePreview() {
+            const amount = Number.parseFloat(amountInput.value || '0');
+            const odds = resultSelect.value === 'yes' ? yesOdds : noOdds;
+            const expected = Number.isFinite(amount) ? amount * odds : 0;
+            preview.textContent = `Expected win: ${expected.toFixed(2)} Marcoins`;
+        }
+
+        amountInput.addEventListener('input', updatePreview);
+        resultSelect.addEventListener('change', updatePreview);
+        updatePreview();
+    })();
+</script>
+{% endblock %}

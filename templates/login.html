@@ -1,0 +1,25 @@
+{% extends 'base.html' %}
+{% block title %}Login | Betship{% endblock %}
+{% block content %}
+<div style="display: grid; place-items: center; min-height: calc(100vh - 140px);">
+    <section class="card" style="width: min(520px, 100%);">
+        <span class="pill">Access your wallet</span>
+        <h2>Log in to Betship</h2>
+        <p class="muted">Enter with your username and password to continue.</p>
+        <form class="form-grid" method="post">
+            <label>
+                Username
+                <input type="text" name="username" required>
+            </label>
+            <label>
+                Password
+                <input type="password" name="password" required>
+            </label>
+            <div class="actions">
+                <input class="button button-primary" type="submit" value="Login">
+                <a class="button button-ghost" href="{{ url_for('hello') }}">Back home</a>
+            </div>
+        </form>
+    </section>
+</div>
+{% endblock %}

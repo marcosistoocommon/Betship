@@ -1,0 +1,33 @@
+{% extends 'base.html' %}
+{% block title %}Make Bet | Betship{% endblock %}
+{% block content %}
+<div class="card">
+    <div class="actions" style="justify-content: space-between;">
+        <div>
+            <span class="pill">Make a bet</span>
+            <h2 style="margin-bottom: 0;">Open bets</h2>
+        </div>
+        <a class="button button-ghost" href="{{ url_for('hello') }}">Home</a>
+    </div>
+
+    {% if open_bets %}
+    <div class="bet-list" style="margin-top: 18px;">
+        {% for bet in open_bets %}
+        <a class="bet-item" href="{{ url_for('bet_detail', bet_id=bet.id) }}">
+            <div class="bet-meta">
+                <div class="bet-title">{{ bet.title or ('Bet #' ~ bet.id) }}</div>
+                <div class="bet-desc">{{ bet.description or 'No description yet.' }}</div>
+                <div class="odds-row">
+                    <span class="pill">Yes quota {{ bet.yesodds }}</span>
+                    <span class="pill">No quota {{ bet.noodds }}</span>
+                </div>
+            </div>
+            <span class="button button-primary">Open bet</span>
+        </a>
+        {% endfor %}
+    </div>
+    {% else %}
+    <p class="muted" style="margin-top: 18px;">No open bets are available right now.</p>
+    {% endif %}
+</div>
+{% endblock %}

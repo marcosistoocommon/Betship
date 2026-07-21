@@ -1,0 +1,77 @@
+{% extends 'base.html' %}
+{% block title %}Profile | Betship{% endblock %}
+{% block content %}
+<div class="grid grid-3">
+    <section class="card">
+        <span class="pill">Profile</span>
+        <h2>{{ user.username }}</h2>
+        <div class="stat">
+            <span class="muted">Balance</span>
+            <span class="value">{{ '%.2f'|format(user.balance) }} Marcoins</span>
+        </div>
+        <p class="muted">Resetting wipes your actions and returns you to 1000 Marcoins.</p>
+        <div class="actions">
+            <a class="button button-secondary" href="{{ url_for('profile_edit') }}">Edit account</a>
+            <form method="post" action="{{ url_for('profile_reset') }}">
+                <button class="button button-danger" type="submit">Reset profile</button>
+            </form>
+        </div>
+        <form method="post" action="{{ url_for('profile_delete') }}" style="margin-top: 12px;" onsubmit="return confirm('Delete this account and all related bets and wagers?');">
+            <button class="button button-danger" type="submit">Delete account</button>
+        </form>
+    </section>
+
+    <section class="card soft">
+        <span class="pill">Created bets</span>
+        <h3>Your bets</h3>
+        {% if created_bets %}
+        <div class="compact-list">
+            {% for bet in created_bets %}
+            <div class="compact-item">
+                <div>
+                    <strong>{{ bet.title or ('Bet #' ~ bet.id) }}</strong><br>
+                    <span class="fine">{{ bet.description or 'No description.' }}</span><br>
+                    <span class="fine">Yes {{ bet.yesodds }} | No {{ bet.noodds }} | {{ bet.state }}{% if bet.result %} | result: {{ bet.result }}{% endif %}</span>
+                </div>
+                <div class="actions">
+                    <a class="button button-ghost" href="{{ url_for('bet_detail', bet_id=bet.id) }}">View</a>
+                    {% if bet.state == 'open' %}
+                    <form method="post" action="{{ url_for('bet_delete', bet_id=bet.id) }}">
+                        <button class="button button-danger" type="submit">Delete</button>
+                    </form>
+                    {% endif %}
+                </div>
+            </div>
+            {% endfor %}
+        </div>
+        {% else %}
+        <p class="muted">You have not created any bets yet.</p>
+        {% endif %}
+    </section>
+
+    <section class="card soft">
+        <span class="pill">Wagers</span>
+        <h3>Your wagers</h3>
+        {% if wagers %}
+        <div class="compact-list">
+            {% for wager in wagers %}
+            <div class="compact-item">
+                <div>
+                    <strong>{{ wager.bet_title or ('Bet #' ~ wager.bet_id) }}</strong><br>
+                    <span class="fine">Selected: {{ wager.selected_result }} | Amount: {{ '%.2f'|format(wager.amount_betted) }}</span><br>
+                    <span class="fine">Bet state: {{ wager.bet_state }}{% if wager.bet_result %} | result: {{ wager.bet_result }}{% endif %}</span>
+                </div>
+                {% if wager.bet_state == 'open' %}
+                <form method="post" action="{{ url_for('wager_delete', wager_id=wager.id) }}">
+                    <button class="button button-danger" type="submit">Erase wager</button>
+                </form>
+                {% endif %}
+            </div>
+            {% endfor %}
+        </div>
+        {% else %}
+        <p class="muted">You have not placed any wagers yet.</p>
+        {% endif %}
+    </section>
+</div>
+{% endblock %}

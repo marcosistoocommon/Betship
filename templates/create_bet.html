@@ -1,0 +1,29 @@
+{% extends 'base.html' %}
+{% block title %}Create Bet | Betship{% endblock %}
+{% block content %}
+<section class="card" style="max-width: 760px; margin: 0 auto;">
+    <span class="pill">Create a bet</span>
+    <h2>Define the outcome and story</h2>
+    <form class="form-grid" method="post">
+        <label>
+            Bet name
+            <input type="text" name="title" placeholder="Example: City Cup Final" required>
+        </label>
+        <label>
+            Description
+            <textarea name="description" placeholder="What is this bet about?" required></textarea>
+        </label>
+        <label>
+            More feasible result
+            <select name="more_feasible_result" required>
+                <option value="yes">Yes</option>
+                <option value="no">No</option>
+            </select>
+        </label>
+        <div class="actions">
+            <input class="button button-primary" type="submit" value="Create bet">
+            <a class="button button-ghost" href="{{ url_for('profile') }}">Back to profile</a>
+        </div>
+    </form>
+</section>
+{% endblock %}

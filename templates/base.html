@@ -1,0 +1,447 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{% block title %}Betship{% endblock %}</title>
+    <style>
+        :root {
+            --bg: #0f172a;
+            --panel: rgba(15, 23, 42, 0.82);
+            --panel-soft: rgba(30, 41, 59, 0.92);
+            --text: #e2e8f0;
+            --muted: #94a3b8;
+            --accent: #fbbf24;
+            --accent-2: #38bdf8;
+            --danger: #fb7185;
+            --success: #4ade80;
+            --border: rgba(148, 163, 184, 0.22);
+            --shadow: 0 18px 60px rgba(2, 6, 23, 0.45);
+        }
+
+        * {
+            box-sizing: border-box;
+        }
+
+        body {
+            margin: 0;
+            font-family: Georgia, Cambria, "Times New Roman", Times, serif;
+            color: var(--text);
+            background:
+                radial-gradient(circle at top left, rgba(56, 189, 248, 0.2), transparent 28%),
+                radial-gradient(circle at top right, rgba(251, 191, 36, 0.2), transparent 30%),
+                linear-gradient(160deg, #020617 0%, #0f172a 50%, #111827 100%);
+            min-height: 100vh;
+        }
+
+        a {
+            color: inherit;
+            text-decoration: none;
+        }
+
+        .shell {
+            width: min(1180px, calc(100% - 32px));
+            margin: 0 auto;
+            padding: 24px 0 48px;
+        }
+
+        .topbar {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 16px;
+            margin-bottom: 28px;
+            padding: 18px 22px;
+            border: 1px solid var(--border);
+            border-radius: 24px;
+            background: rgba(15, 23, 42, 0.72);
+            backdrop-filter: blur(16px);
+            box-shadow: var(--shadow);
+        }
+
+        .brand {
+            display: flex;
+            flex-direction: column;
+            gap: 4px;
+        }
+
+        .brand h1 {
+            margin: 0;
+            font-size: 1.5rem;
+            letter-spacing: 0.02em;
+        }
+
+        .brand span {
+            color: var(--muted);
+            font-size: 0.95rem;
+        }
+
+        .nav {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 10px;
+        }
+
+        .button,
+        button,
+        input[type="submit"] {
+            border: 1px solid transparent;
+            border-radius: 999px;
+            padding: 0.8rem 1.1rem;
+            font: inherit;
+            font-weight: 700;
+            cursor: pointer;
+            transition: transform 0.15s ease, box-shadow 0.15s ease, opacity 0.15s ease;
+        }
+
+        .button:hover,
+        button:hover,
+        input[type="submit"]:hover {
+            transform: translateY(-1px);
+            box-shadow: 0 12px 24px rgba(2, 6, 23, 0.24);
+        }
+
+        .button-primary {
+            background: linear-gradient(135deg, var(--accent), #fb7185);
+            color: #111827;
+        }
+
+        .button-secondary {
+            background: rgba(56, 189, 248, 0.14);
+            border-color: rgba(56, 189, 248, 0.35);
+            color: var(--text);
+        }
+
+        .button-ghost {
+            background: rgba(148, 163, 184, 0.1);
+            border-color: var(--border);
+            color: var(--text);
+        }
+
+        .button-danger {
+            background: rgba(251, 113, 133, 0.16);
+            border-color: rgba(251, 113, 133, 0.4);
+            color: #fecdd3;
+        }
+
+        .grid {
+            display: grid;
+            gap: 18px;
+        }
+
+        .grid-2 {
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+        }
+
+        .grid-3 {
+            grid-template-columns: repeat(3, minmax(0, 1fr));
+        }
+
+        .card {
+            border: 1px solid var(--border);
+            border-radius: 24px;
+            background: var(--panel);
+            backdrop-filter: blur(14px);
+            box-shadow: var(--shadow);
+            padding: 22px;
+        }
+
+        .card.soft {
+            background: var(--panel-soft);
+        }
+
+        .card h2,
+        .card h3,
+        .card h4 {
+            margin-top: 0;
+        }
+
+        .muted {
+            color: var(--muted);
+        }
+
+        .flash-list {
+            display: grid;
+            gap: 10px;
+            margin-bottom: 18px;
+        }
+
+        .flash {
+            padding: 12px 16px;
+            border-radius: 16px;
+            border: 1px solid var(--border);
+            background: rgba(15, 23, 42, 0.8);
+        }
+
+        .flash strong {
+            color: var(--accent);
+        }
+
+        .stat {
+            display: flex;
+            flex-direction: column;
+            gap: 6px;
+        }
+
+        .stat .value {
+            font-size: 1.6rem;
+            font-weight: 800;
+        }
+
+        .pill {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            padding: 0.35rem 0.7rem;
+            border-radius: 999px;
+            background: rgba(148, 163, 184, 0.12);
+            color: var(--muted);
+            font-size: 0.9rem;
+        }
+
+        .bet-list {
+            display: grid;
+            gap: 14px;
+        }
+
+        .bet-item {
+            display: flex;
+            justify-content: space-between;
+            gap: 16px;
+            align-items: center;
+            padding: 16px 18px;
+            border: 1px solid var(--border);
+            border-radius: 18px;
+            background: rgba(15, 23, 42, 0.55);
+        }
+
+        .bet-item:hover {
+            border-color: rgba(251, 191, 36, 0.45);
+        }
+
+        .bet-meta {
+            display: grid;
+            gap: 6px;
+        }
+
+        .bet-title {
+            font-size: 1.05rem;
+            font-weight: 800;
+        }
+
+        .bet-desc {
+            color: var(--muted);
+            line-height: 1.45;
+        }
+
+        .odds-row {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 10px;
+        }
+
+        .guest-hero {
+            position: relative;
+            min-height: calc(100vh - 180px);
+            display: grid;
+            place-items: center;
+            overflow: hidden;
+        }
+
+        .guest-frame {
+            position: relative;
+            width: min(720px, 92vw);
+            aspect-ratio: 16 / 9;
+            border-radius: 32px;
+            border: 1px solid rgba(148, 163, 184, 0.22);
+            background:
+                linear-gradient(160deg, rgba(15, 23, 42, 0.88), rgba(2, 6, 23, 0.7)),
+                radial-gradient(circle at top, rgba(251, 191, 36, 0.18), transparent 42%);
+            box-shadow: 0 28px 90px rgba(2, 6, 23, 0.5);
+            display: grid;
+            place-items: center;
+            isolation: isolate;
+        }
+
+        .guest-ring {
+            position: absolute;
+            inset: 10%;
+            border-radius: 28px;
+            border: 1px solid rgba(56, 189, 248, 0.18);
+            box-shadow: inset 0 0 0 1px rgba(251, 191, 36, 0.08);
+            backdrop-filter: blur(3px);
+        }
+
+        .guest-login {
+            position: relative;
+            z-index: 1;
+            font-size: 1.2rem;
+            padding: 1rem 1.6rem;
+            box-shadow: 0 16px 30px rgba(251, 191, 36, 0.18);
+        }
+
+        .guest-orb {
+            position: absolute;
+            width: 26vw;
+            max-width: 360px;
+            aspect-ratio: 1;
+            border-radius: 50%;
+            filter: blur(8px);
+            opacity: 0.55;
+            pointer-events: none;
+        }
+
+        .guest-orb-left {
+            left: -6vw;
+            top: 18%;
+            background: radial-gradient(circle, rgba(56, 189, 248, 0.45), transparent 64%);
+        }
+
+        .guest-orb-right {
+            right: -5vw;
+            bottom: 14%;
+            background: radial-gradient(circle, rgba(251, 113, 133, 0.4), transparent 64%);
+        }
+
+        .form-grid {
+            display: grid;
+            gap: 14px;
+        }
+
+        label {
+            display: grid;
+            gap: 8px;
+            font-weight: 700;
+        }
+
+        input,
+        textarea,
+        select {
+            width: 100%;
+            border-radius: 16px;
+            border: 1px solid var(--border);
+            background: rgba(15, 23, 42, 0.75);
+            color: var(--text);
+            padding: 12px 14px;
+            font: inherit;
+        }
+
+        textarea {
+            min-height: 120px;
+            resize: vertical;
+        }
+
+        .split {
+            display: flex;
+            gap: 12px;
+            flex-wrap: wrap;
+        }
+
+        .split > * {
+            flex: 1 1 220px;
+        }
+
+        .actions {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 10px;
+            align-items: center;
+        }
+
+        .right {
+            text-align: right;
+        }
+
+        .compact-list {
+            display: grid;
+            gap: 12px;
+        }
+
+        .compact-item {
+            padding: 14px 16px;
+            border-radius: 16px;
+            border: 1px solid var(--border);
+            background: rgba(15, 23, 42, 0.5);
+            display: flex;
+            justify-content: space-between;
+            gap: 12px;
+            align-items: center;
+        }
+
+        .fine {
+            font-size: 0.92rem;
+            color: var(--muted);
+        }
+
+        .preview {
+            padding: 14px 16px;
+            border-radius: 16px;
+            border: 1px dashed rgba(148, 163, 184, 0.3);
+            background: rgba(15, 23, 42, 0.4);
+        }
+
+        @media (max-width: 820px) {
+            .topbar,
+            .bet-item,
+            .compact-item {
+                flex-direction: column;
+                align-items: flex-start;
+            }
+
+            .guest-hero {
+                min-height: calc(100vh - 140px);
+            }
+
+            .guest-frame {
+                aspect-ratio: 4 / 3;
+            }
+
+            .guest-orb {
+                width: 42vw;
+            }
+
+            .grid-2,
+            .grid-3 {
+                grid-template-columns: 1fr;
+            }
+
+            .right {
+                text-align: left;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="shell">
+        {% if user %}
+        <header class="topbar">
+            <div class="brand">
+                <h1>Betship</h1>
+                <span>Binary bets, Marcoins, and fast settlement</span>
+            </div>
+            <nav class="nav">
+                <a class="button button-ghost" href="{{ url_for('hello') }}">Home</a>
+                <a class="button button-secondary" href="{{ url_for('bets_list') }}">Make Bet</a>
+                <a class="button button-primary" href="{{ url_for('create_bet_page') }}">Create Bet</a>
+                <a class="button button-ghost" href="{{ url_for('profile') }}">Profile</a>
+                <form method="post" action="{{ url_for('logout') }}" style="display:inline;">
+                    <button class="button button-danger" type="submit">Logout</button>
+                </form>
+            </nav>
+        </header>
+        {% endif %}
+
+        {% with messages = get_flashed_messages() %}
+            {% if messages %}
+            <div class="flash-list">
+                {% for message in messages %}
+                <div class="flash">{{ message }}</div>
+                {% endfor %}
+            </div>
+            {% endif %}
+        {% endwith %}
+
+        {% block content %}{% endblock %}
+    </div>
+</body>
+</html>

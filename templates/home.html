@@ -1,0 +1,70 @@
+{% extends 'base.html' %}
+{% block title %}Home | Betship{% endblock %}
+{% block content %}
+{% if not user %}
+<section class="guest-hero">
+    <div class="guest-orb guest-orb-left"></div>
+    <div class="guest-orb guest-orb-right"></div>
+    <div class="guest-frame">
+        <div class="guest-ring"></div>
+        <a class="button button-primary guest-login" href="{{ url_for('login') }}">Login</a>
+    </div>
+</section>
+{% else %}
+<div class="grid grid-2">
+    <section class="card">
+        <span class="pill">Wallet</span>
+        <div class="stat">
+            <span class="muted">Current user</span>
+            <span class="value">{{ user.username }}</span>
+        </div>
+        <p class="muted">Login session active. Use the menu to create or place bets.</p>
+    </section>
+
+    <section class="card">
+        <span class="pill">Actions</span>
+        <h2>What you can do</h2>
+        <div class="compact-list">
+            <div class="compact-item">
+                <span>Create a binary bet</span>
+                <a class="button button-secondary" href="{{ url_for('create_bet_page') }}">Create bet</a>
+            </div>
+            <div class="compact-item">
+                <span>Browse open bets</span>
+                <a class="button button-secondary" href="{{ url_for('bets_list') }}">Make bet</a>
+            </div>
+        </div>
+    </section>
+</div>
+
+<div class="card" style="margin-top: 18px;">
+    <div class="actions" style="justify-content: space-between;">
+        <div>
+            <span class="pill">Open bets</span>
+            <h2 style="margin-bottom: 0;">Available wagers</h2>
+        </div>
+        <a class="button button-ghost" href="{{ url_for('bets_list') }}">See all</a>
+    </div>
+
+    {% if open_bets %}
+    <div class="bet-list" style="margin-top: 18px;">
+        {% for bet in open_bets[:5] %}
+        <a class="bet-item" href="{{ url_for('bet_detail', bet_id=bet.id) }}">
+            <div class="bet-meta">
+                <div class="bet-title">{{ bet.title }}</div>
+                <div class="bet-desc">{{ bet.description or 'No description yet.' }}</div>
+                <div class="odds-row">
+                    <span class="pill">Yes {{ bet.yesodds }}</span>
+                    <span class="pill">No {{ bet.noodds }}</span>
+                </div>
+            </div>
+            <span class="button button-primary">Open</span>
+        </a>
+        {% endfor %}
+    </div>
+    {% else %}
+    <p class="muted">There are no open bets yet.</p>
+    {% endif %}
+</div>
+{% endif %}
+{% endblock %}

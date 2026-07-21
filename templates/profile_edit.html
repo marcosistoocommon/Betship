@@ -1,0 +1,30 @@
+{% extends 'base.html' %}
+{% block title %}Edit Profile | Betship{% endblock %}
+{% block content %}
+<div class="grid grid-2">
+    <section class="card">
+        <span class="pill">Edit account</span>
+        <h2>Update your username or password</h2>
+        <form class="form-grid" method="post">
+            <label>
+                Username
+                <input type="text" name="username" value="{{ user.username }}" required>
+            </label>
+            <label>
+                New password
+                <input type="password" name="password" placeholder="Leave blank to keep your current password">
+            </label>
+            <div class="actions">
+                <input class="button button-primary" type="submit" value="Save changes">
+                <a class="button button-ghost" href="{{ url_for('profile') }}">Back to profile</a>
+            </div>
+        </form>
+    </section>
+
+    <section class="card soft">
+        <span class="pill">Notes</span>
+        <h3>Profile changes</h3>
+        <p class="muted">Changing the username updates the public name shown across bets and wagers. Leaving the password blank keeps the current one.</p>
+    </section>
+</div>
+{% endblock %}
