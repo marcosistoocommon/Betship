@@ -1,21 +1,21 @@
 {% extends 'base.html' %}
 {% block title %}Bet {{ bet.id }} | Betship{% endblock %}
 {% block content %}
-<div class="grid grid-2">
+<div class="grid">
     <section class="card">
-        <span class="pill">Bet #{{ bet.id }}</span>
+        <span class="pill" style="margin-bottom: 14px;">Bet #{{ bet.id }}</span>
         <h2>{{ bet.title or 'Untitled bet' }}</h2>
         <p class="muted">{{ bet.description or 'No description provided.' }}</p>
         <div class="odds-row" style="margin: 18px 0;">
             <span class="pill">Yes quota {{ bet.yesodds }}</span>
             <span class="pill">No quota {{ bet.noodds }}</span>
             <span class="pill">State {{ bet.state }}</span>
-            {% if bet.result %}
-            <span class="pill">Result {{ bet.result }}</span>
-            {% endif %}
         </div>
+        {% if bet.result %}
+        <h2>Result: {{ bet.result }}</h2>
+        {% endif %}
 
-        {% if bet.state == 'open' and (not user or user.id != bet.creator) %}
+        {% if user and user.id != bet.creator and bet.state == 'open' %}
         <form class="form-grid" method="post">
             <div class="split">
                 <label>
@@ -38,10 +38,27 @@
                 <a class="button button-ghost" href="{{ url_for('bets_list') }}">Back to list</a>
             </div>
         </form>
-        {% elif bet.state == 'open' %}
-        <p class="muted">You created this bet, so you cannot place a wager on it.</p>
-        {% else %}
+        {% elif bet.state == 'closed' %}
         <p class="muted">This bet is closed. No more wagers can be placed.</p>
+
+        <section class="card soft">
+        <h3>Placed wagers</h3>
+        {% if wagers %}
+        <div class="compact-list">
+            {% for wager in wagers %}
+            <div class="compact-item">
+                <div>
+                    <strong>{{ wager.username }}</strong><br>
+                    <span class="fine">Selected {{ wager.selected_result }} | Amount {{ '%.2f'|format(wager.amount_betted) }}</span>
+                </div>
+            </div>
+            {% endfor %}
+        </div>
+        {% else %}
+        <p class="muted">Nobody has wagered on this bet yet.</p>
+        {% endif %}
+    </section>
+    </div>
         {% endif %}
 
         {% if user and user.id == bet.creator and bet.state == 'open' %}
@@ -65,38 +82,19 @@
         </div>
         {% endif %}
     </section>
-
-    <section class="card soft">
-        <span class="pill">Current wagers</span>
-        <h3>Who is in this bet</h3>
-        {% if wagers %}
-        <div class="compact-list">
-            {% for wager in wagers %}
-            <div class="compact-item">
-                <div>
-                    <strong>{{ wager.username }}</strong><br>
-                    <span class="fine">Selected {{ wager.selected_result }} | Amount {{ '%.2f'|format(wager.amount_betted) }}</span>
-                </div>
-            </div>
-            {% endfor %}
-        </div>
-        {% else %}
-        <p class="muted">Nobody has wagered on this bet yet.</p>
-        {% endif %}
-    </section>
+    <script type="application/json" id="bet-odds-data">{{ {'yesOdds': bet.yesodds, 'noOdds': bet.noodds} | tojson }}</script>
 </div>
 
 <script>
     (function () {
-        const yesOdds = {{ bet.yesodds }};
-        const noOdds = {{ bet.noodds }};
+        const oddsData = JSON.parse(document.getElementById('bet-odds-data').textContent);
         const amountInput = document.getElementById('amount_betted');
         const resultSelect = document.getElementById('selected_result');
         const preview = document.getElementById('preview');
 
         function updatePreview() {
             const amount = Number.parseFloat(amountInput.value || '0');
-            const odds = resultSelect.value === 'yes' ? yesOdds : noOdds;
+            const odds = resultSelect.value === 'yes' ? oddsData.yesOdds : oddsData.noOdds;
             const expected = Number.isFinite(amount) ? amount * odds : 0;
             preview.textContent = `Expected win: ${expected.toFixed(2)} Marcoins`;
         }

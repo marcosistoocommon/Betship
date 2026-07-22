@@ -76,6 +76,13 @@
             font-size: 0.95rem;
         }
 
+        .brand .subtle {
+            font-size: 0.86rem;
+            letter-spacing: 0.04em;
+            text-transform: uppercase;
+            color: rgba(226, 232, 240, 0.48);
+        }
+
         .nav {
             display: flex;
             flex-wrap: wrap;
@@ -219,6 +226,10 @@
             border-color: rgba(251, 191, 36, 0.45);
         }
 
+        .bet-item.compact {
+            align-items: flex-start;
+        }
+
         .bet-meta {
             display: grid;
             gap: 6px;
@@ -303,6 +314,29 @@
             background: radial-gradient(circle, rgba(251, 113, 133, 0.4), transparent 64%);
         }
 
+        .mobile-hero {
+            display: grid;
+            gap: 14px;
+            text-align: left;
+        }
+
+        .mobile-hero .hero-title {
+            font-size: clamp(2rem, 8vw, 3.2rem);
+            line-height: 1.05;
+            margin: 0;
+        }
+
+        .mobile-hero .hero-copy {
+            margin: 0;
+            color: var(--muted);
+            max-width: 34ch;
+        }
+
+        .wallet-value {
+            font-size: clamp(1.8rem, 6vw, 2.6rem);
+            font-weight: 900;
+        }
+
         .form-grid {
             display: grid;
             gap: 14px;
@@ -381,6 +415,16 @@
         }
 
         @media (max-width: 820px) {
+            .shell {
+                width: min(100% - 18px, 1180px);
+                padding: 12px 0 28px;
+            }
+
+            .topbar {
+                padding: 14px 16px;
+                border-radius: 20px;
+            }
+
             .topbar,
             .bet-item,
             .compact-item {
@@ -388,21 +432,52 @@
                 align-items: flex-start;
             }
 
+            .bet-item {
+                padding: 14px;
+            }
+
+            .card {
+                padding: 18px;
+                border-radius: 20px;
+            }
+
             .guest-hero {
-                min-height: calc(100vh - 140px);
+                min-height: calc(100vh - 150px);
             }
 
             .guest-frame {
                 aspect-ratio: 4 / 3;
+                width: min(100%, 92vw);
             }
 
             .guest-orb {
                 width: 42vw;
             }
 
+            .mobile-hero {
+                gap: 10px;
+            }
+
             .grid-2,
             .grid-3 {
                 grid-template-columns: 1fr;
+            }
+
+            .actions {
+                width: 100%;
+            }
+
+            .actions .button,
+            .actions form,
+            .actions a {
+                width: 100%;
+            }
+
+            .actions form button,
+            .actions > .button,
+            .actions > a {
+                width: 100%;
+                justify-content: center;
             }
 
             .right {
@@ -417,11 +492,10 @@
         <header class="topbar">
             <div class="brand">
                 <h1>Betship</h1>
-                <span>Binary bets, Marcoins, and fast settlement</span>
             </div>
             <nav class="nav">
                 <a class="button button-ghost" href="{{ url_for('hello') }}">Home</a>
-                <a class="button button-secondary" href="{{ url_for('bets_list') }}">Make Bet</a>
+                <a class="button button-secondary" href="{{ url_for('users_page') }}">Users</a>
                 <a class="button button-primary" href="{{ url_for('create_bet_page') }}">Create Bet</a>
                 <a class="button button-ghost" href="{{ url_for('profile') }}">Profile</a>
                 <form method="post" action="{{ url_for('logout') }}" style="display:inline;">

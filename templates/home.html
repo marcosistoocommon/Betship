@@ -11,28 +11,15 @@
     </div>
 </section>
 {% else %}
-<div class="grid grid-2">
+<div class="grid">
     <section class="card">
         <span class="pill">Wallet</span>
         <div class="stat">
-            <span class="muted">Current user</span>
             <span class="value">{{ user.username }}</span>
+            <span class="wallet-value">{{ '%.2f'|format(user.balance) }} Marcoins</span>
         </div>
-        <p class="muted">Login session active. Use the menu to create or place bets.</p>
-    </section>
-
-    <section class="card">
-        <span class="pill">Actions</span>
-        <h2>What you can do</h2>
-        <div class="compact-list">
-            <div class="compact-item">
-                <span>Create a binary bet</span>
-                <a class="button button-secondary" href="{{ url_for('create_bet_page') }}">Create bet</a>
-            </div>
-            <div class="compact-item">
-                <span>Browse open bets</span>
-                <a class="button button-secondary" href="{{ url_for('bets_list') }}">Make bet</a>
-            </div>
+        <div class="actions" style="margin-top: 14px;">
+            <a class="button button-ghost" href="{{ url_for('bets_list') }}">Place wager</a>
         </div>
     </section>
 </div>
@@ -40,8 +27,7 @@
 <div class="card" style="margin-top: 18px;">
     <div class="actions" style="justify-content: space-between;">
         <div>
-            <span class="pill">Open bets</span>
-            <h2 style="margin-bottom: 0;">Available wagers</h2>
+            <h2 style="margin-bottom: 0;">Available bets</h2>
         </div>
         <a class="button button-ghost" href="{{ url_for('bets_list') }}">See all</a>
     </div>
@@ -49,13 +35,15 @@
     {% if open_bets %}
     <div class="bet-list" style="margin-top: 18px;">
         {% for bet in open_bets[:5] %}
-        <a class="bet-item" href="{{ url_for('bet_detail', bet_id=bet.id) }}">
+        <a class="bet-item compact" href="{{ url_for('bet_detail', bet_id=bet.id) }}">
             <div class="bet-meta">
                 <div class="bet-title">{{ bet.title }}</div>
+                <div class="bet-desc">Creator: {{ bet.creator_name }}</div>
                 <div class="bet-desc">{{ bet.description or 'No description yet.' }}</div>
                 <div class="odds-row">
                     <span class="pill">Yes {{ bet.yesodds }}</span>
                     <span class="pill">No {{ bet.noodds }}</span>
+                    <span class="pill">{{ bet.state|title }}</span>
                 </div>
             </div>
             <span class="button button-primary">Open</span>
@@ -63,8 +51,34 @@
         {% endfor %}
     </div>
     {% else %}
-    <p class="muted">There are no open bets yet.</p>
+    <p class="muted">There are no bets yet.</p>
     {% endif %}
 </div>
+    <section class="card" style="margin-top: 12px;">
+        <h3>Your bets</h3>
+        {% if created_bets %}
+        <div class="compact-list">
+            {% for bet in created_bets %}
+            <div class="compact-item">
+                <div>
+                    <strong>{{ bet.title or ('Bet #' ~ bet.id) }}</strong><br>
+                    <span class="fine">{{ bet.description or 'No description.' }}</span><br>
+                    <span class="fine">Yes {{ bet.yesodds }} | No {{ bet.noodds }} | {{ bet.state }}{% if bet.result %} | result: {{ bet.result }}{% endif %}</span>
+                </div>
+                <div class="actions">
+                    <a class="button button-ghost" href="{{ url_for('bet_detail', bet_id=bet.id) }}">View</a>
+                    {% if bet.state == 'open' %}
+                    <form method="post" action="{{ url_for('bet_delete', bet_id=bet.id) }}">
+                        <button class="button button-danger" type="submit">Delete</button>
+                    </form>
+                    {% endif %}
+                </div>
+            </div>
+            {% endfor %}
+        </div>
+        {% else %}
+        <p class="muted">You have not created any bets yet.</p>
+        {% endif %}
+    </section>
 {% endif %}
 {% endblock %}

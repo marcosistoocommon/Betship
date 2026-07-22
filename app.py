@@ -332,20 +332,39 @@ def get_profile_data(user_id: int):
     return created_bets, wagers
 
 
-def get_open_bets(exclude_creator_id: int | None = None):
+def get_bets(exclude_creator_id: int | None = None):
     if exclude_creator_id is None:
         return fetch_all(
-            "SELECT * FROM bets WHERE state = 'open' ORDER BY id DESC"
+            """
+            SELECT bets.*, users.username AS creator_name
+            FROM bets
+            JOIN users ON users.id = bets.creator
+            ORDER BY bets.id DESC
+            """
         )
 
     return fetch_all(
-        "SELECT * FROM bets WHERE state = 'open' AND creator != ? ORDER BY id DESC",
+        """
+        SELECT bets.*, users.username AS creator_name
+        FROM bets
+        JOIN users ON users.id = bets.creator
+        WHERE bets.creator != ?
+        ORDER BY bets.id DESC
+        """,
         (exclude_creator_id,),
     )
 
 
 def get_bet_detail(bet_id: int):
-    bet = fetch_one("SELECT * FROM bets WHERE id = ?", (bet_id,))
+    bet = fetch_one(
+        """
+        SELECT bets.*, users.username AS creator_name
+        FROM bets
+        JOIN users ON users.id = bets.creator
+        WHERE bets.id = ?
+        """,
+        (bet_id,),
+    )
     wagers = fetch_all(
         "SELECT wagers.*, users.username FROM wagers JOIN users ON users.id = wagers.us_id WHERE bet_id = ? ORDER BY wagers.id DESC",
         (bet_id,),
@@ -359,8 +378,12 @@ def hello():
     if user is None:
         return redirect(url_for("login"))
 
-    bets = get_open_bets(user["id"])
-    return render_template("home.html", user=user, open_bets=bets)
+    bets = get_bets(user["id"])
+    created_bets = fetch_all(
+        "SELECT * FROM bets WHERE creator = ? ORDER BY id DESC",
+        (user["id"],),
+    )
+    return render_template("home.html", user=user, open_bets=bets, created_bets=created_bets)
 
 
 @app.route("/login", methods=["GET", "POST"])
@@ -398,6 +421,7 @@ def profile():
     return render_template(
         "profile.html",
         user=user,
+        balance=get_user_balance(user["id"]),
         created_bets=created_bets,
         wagers=wagers,
     )
@@ -465,6 +489,15 @@ def profile_delete():
     return redirect(url_for("hello"))
 
 
+@app.route("/users")
+@login_required
+def users_page():
+    users = fetch_all(
+        "SELECT username, balance FROM users ORDER BY balance DESC, username ASC"
+    )
+    return render_template("users.html", user=current_user(), users=users)
+
+
 @app.route("/create-bet", methods=["GET", "POST"])
 @login_required
 def create_bet_page():
@@ -478,7 +511,7 @@ def create_bet_page():
 
         bet_id, yesodds, noodds = create_bet(current_user()["id"], title, description, more_feasible_result)
         flash(f"Bet {bet_id} created.")
-        return redirect(url_for("profile"))
+        return redirect(url_for("hello"))
 
     return render_template("create_bet.html", user=current_user())
 
@@ -487,7 +520,7 @@ def create_bet_page():
 @login_required
 def bets_list():
     user = current_user()
-    return render_template("make_bet.html", user=user, open_bets=get_open_bets(user["id"]))
+    return render_template("make_bet.html", user=user, open_bets=get_bets(user["id"]))
 
 
 @app.route("/bets/<int:bet_id>", methods=["GET", "POST"])
@@ -496,6 +529,8 @@ def bet_detail(bet_id: int):
     bet, wagers = get_bet_detail(bet_id)
     if bet is None:
         abort(404)
+
+    can_view_wagers = bet["state"] == "closed"
 
     if request.method == "POST":
         selected_result = request.form["selected_result"]
@@ -513,7 +548,8 @@ def bet_detail(bet_id: int):
         "bet_detail.html",
         user=current_user(),
         bet=bet,
-        wagers=wagers,
+        wagers=wagers if can_view_wagers else [],
+        can_view_wagers=can_view_wagers,
         expected_yes_win=expected_yes_win,
         expected_no_win=expected_no_win,
     )

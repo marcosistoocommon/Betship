@@ -1,0 +1,27 @@
+{% extends 'base.html' %}
+{% block title %}Users | Betship{% endblock %}
+{% block content %}
+<div class="card">
+    <div class="actions" style="justify-content: space-between;">
+        <div>
+            <h2 style="margin-bottom: 0;">Users and balances</h2>
+        </div>
+        <a class="button button-ghost" href="{{ url_for('hello') }}">Home</a>
+    </div>
+
+    {% if users %}
+    <div class="compact-list" style="margin-top: 18px;">
+        {% for platform_user in users %}
+        <div class="compact-item">
+            <div>
+                <strong>{{ platform_user.username }}</strong><br>
+                <span class="fine">Balance: {{ '%.2f'|format(platform_user.balance) }} Marcoins</span>
+            </div>
+        </div>
+        {% endfor %}
+    </div>
+    {% else %}
+    <p class="muted" style="margin-top: 18px;">No users found.</p>
+    {% endif %}
+</div>
+{% endblock %}

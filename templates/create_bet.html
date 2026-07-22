@@ -2,7 +2,6 @@
 {% block title %}Create Bet | Betship{% endblock %}
 {% block content %}
 <section class="card" style="max-width: 760px; margin: 0 auto;">
-    <span class="pill">Create a bet</span>
     <h2>Define the outcome and story</h2>
     <form class="form-grid" method="post">
         <label>
@@ -22,7 +21,7 @@
         </label>
         <div class="actions">
             <input class="button button-primary" type="submit" value="Create bet">
-            <a class="button button-ghost" href="{{ url_for('profile') }}">Back to profile</a>
+            <a class="button button-ghost" href="{{ url_for('hello') }}">Back</a>
         </div>
     </form>
 </section>
