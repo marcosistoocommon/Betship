@@ -29,7 +29,7 @@
             <div class="compact-item">
                 <div>
                     <strong>{{ bet.title or ('Bet #' ~ bet.id) }}</strong><br>
-                    <span class="fine">{{ bet.description or 'No description.' }}</span><br>
+                    <span class="fine">{{ bet.description or '' }}</span><br>
                     <span class="fine">Yes {{ bet.yesodds }} | No {{ bet.noodds }} | {{ bet.state }}{% if bet.result %} | result: {{ bet.result }}{% endif %}</span>
                 </div>
                 <div class="actions">

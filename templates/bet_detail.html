@@ -5,7 +5,7 @@
     <section class="card">
         <span class="pill" style="margin-bottom: 14px;">Bet #{{ bet.id }}</span>
         <h2>{{ bet.title or 'Untitled bet' }}</h2>
-        <p class="muted">{{ bet.description or 'No description provided.' }}</p>
+        <p class="muted">{{ bet.description or '' }}</p>
         <div class="odds-row" style="margin: 18px 0;">
             <span class="pill">Yes quota {{ bet.yesodds }}</span>
             <span class="pill">No quota {{ bet.noodds }}</span>

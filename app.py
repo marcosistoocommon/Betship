@@ -33,7 +33,7 @@ def init_db():
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 creator INTEGER NOT NULL,
                 title TEXT NOT NULL,
-                description TEXT NOT NULL DEFAULT '',
+                description TEXT DEFAULT '',
                 yesodds REAL NOT NULL,
                 noodds REAL NOT NULL,
                 state TEXT NOT NULL DEFAULT 'open',
@@ -53,7 +53,7 @@ def init_db():
             """
         )
         _ensure_column(connection, "bets", "title", "TEXT NOT NULL DEFAULT ''")
-        _ensure_column(connection, "bets", "description", "TEXT NOT NULL DEFAULT ''")
+        _ensure_column(connection, "bets", "description", "TEXT DEFAULT ''")
 
 
 def _ensure_column(connection, table_name: str, column_name: str, column_definition: str):
@@ -185,8 +185,8 @@ def generate_odds(more_feasible_result: str):
     if more_feasible_result not in {"yes", "no"}:
         raise ValueError("more_feasible_result must be 'yes' or 'no'")
 
-    lower_odds = max(1.01, round(random.gauss(1.5, 0.25), 2))
-    higher_odds = max(lower_odds + 0.01, round(random.gauss(5.0, 0.75), 2))
+    lower_odds = max(1.01, round(random.gauss(1.5, 0.5), 2))
+    higher_odds = max(lower_odds + 0.01, round(random.gauss(5.0, 1.75), 2))
 
     if more_feasible_result == "yes":
         return lower_odds, higher_odds

@@ -39,7 +39,7 @@
             <div class="bet-meta">
                 <div class="bet-title">{{ bet.title }}</div>
                 <div class="bet-desc">Creator: {{ bet.creator_name }}</div>
-                <div class="bet-desc">{{ bet.description or 'No description yet.' }}</div>
+                <div class="bet-desc">{{ bet.description or '' }}</div>
                 <div class="odds-row">
                     <span class="pill">Yes {{ bet.yesodds }}</span>
                     <span class="pill">No {{ bet.noodds }}</span>
@@ -62,7 +62,7 @@
             <div class="compact-item">
                 <div>
                     <strong>{{ bet.title or ('Bet #' ~ bet.id) }}</strong><br>
-                    <span class="fine">{{ bet.description or 'No description.' }}</span><br>
+                    <span class="fine">{{ bet.description or '' }}</span><br>
                     <span class="fine">Yes {{ bet.yesodds }} | No {{ bet.noodds }} | {{ bet.state }}{% if bet.result %} | result: {{ bet.result }}{% endif %}</span>
                 </div>
                 <div class="actions">
