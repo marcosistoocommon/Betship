@@ -23,7 +23,7 @@
         </div>
     </section>
 </div>
-
+<div class="grid grid-2">
 <div class="card" style="margin-top: 18px;">
     <div class="actions" style="justify-content: space-between;">
         <div>
@@ -54,7 +54,7 @@
     <p class="muted">There are no bets yet.</p>
     {% endif %}
 </div>
-    <section class="card" style="margin-top: 12px;">
+    <section class="card" style="margin-top: 18px;">
         <h3>Your bets</h3>
         {% if created_bets %}
         <div class="compact-list">
@@ -80,5 +80,6 @@
         <p class="muted">You have not created any bets yet.</p>
         {% endif %}
     </section>
+</div>
 {% endif %}
 {% endblock %}
