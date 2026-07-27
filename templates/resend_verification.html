@@ -1,0 +1,20 @@
+{% extends 'base.html' %}
+{% block title %}Resend Verification | Betship{% endblock %}
+{% block content %}
+<div style="display: grid; place-items: center; min-height: calc(100vh - 140px);">
+    <section class="card" style="width: min(520px, 100%);">
+        <h2>Resend verification email</h2>
+        <p class="muted">Enter the email address associated with your Betship account.</p>
+        <form class="form-grid" method="post">
+            <label>
+                Email address
+                <input type="email" name="email" autocomplete="email" required>
+            </label>
+            <div class="actions">
+                <input class="button button-primary" type="submit" value="Send verification email">
+                <a class="button button-ghost" href="{{ url_for('login') }}">Back to login</a>
+            </div>
+        </form>
+    </section>
+</div>
+{% endblock %}

@@ -9,6 +9,15 @@
             <span class="muted">Balance</span>
             <span class="value">{{ '%.2f'|format(user.balance) }} Marcoins</span>
         </div>
+        <div style="margin-top: 14px;">
+            <span class="muted">Email</span><br>
+            <strong>{{ user.email or 'Not configured' }}</strong>
+            {% if user.email_verified %}
+            <div class="fine" style="color: var(--success);">Verified</div>
+            {% else %}
+            <div class="fine">Not verified</div>
+            {% endif %}
+        </div>
         <p class="muted">Resetting wipes your actions and returns you to 1000 Marcoins.</p>
         <div class="actions">
             <a class="button button-secondary" href="{{ url_for('profile_edit') }}">Edit account</a>

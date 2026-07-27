@@ -1,5 +1,11 @@
+import hashlib
+import os
 import random
+import re
+import secrets
 import sqlite3
+import subprocess
+import time
 from pathlib import Path
 from functools import wraps
 
@@ -7,8 +13,15 @@ from flask import Flask, abort, flash, jsonify, redirect, render_template, reque
 from werkzeug.security import check_password_hash, generate_password_hash
 
 app = Flask(__name__)
-app.secret_key = "betship-dev-secret-key"
+app.secret_key = os.environ.get("BETSHIP_SECRET_KEY")
+if not app.secret_key:
+    raise RuntimeError("BETSHIP_SECRET_KEY must be configured.")
 DATABASE_PATH = Path(__file__).with_name("betship.db")
+
+BETSHIP_BASE_URL = os.environ.get("BETSHIP_BASE_URL", "http://127.0.0.1:5000").rstrip("/")
+BETSHIP_EMAIL = os.environ.get("BETSHIP_EMAIL", "")
+VERIFICATION_TOKEN_TTL = 60 * 60
+EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
 
 
 def get_db_connection():
@@ -26,7 +39,11 @@ def init_db():
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 username TEXT NOT NULL UNIQUE,
                 password TEXT NOT NULL,
-                balance REAL NOT NULL DEFAULT 0
+                balance REAL NOT NULL DEFAULT 0,
+                email TEXT,
+                email_verified INTEGER NOT NULL DEFAULT 0,
+                verification_token_hash TEXT,
+                verification_expires_at INTEGER
             );
 
             CREATE TABLE IF NOT EXISTS bets (
@@ -54,6 +71,14 @@ def init_db():
         )
         _ensure_column(connection, "bets", "title", "TEXT NOT NULL DEFAULT ''")
         _ensure_column(connection, "bets", "description", "TEXT DEFAULT ''")
+        _ensure_column(connection, "users", "email", "TEXT")
+        _ensure_column(connection, "users", "email_verified", "INTEGER NOT NULL DEFAULT 0")
+        _ensure_column(connection, "users", "verification_token_hash", "TEXT")
+        _ensure_column(connection, "users", "verification_expires_at", "INTEGER")
+        connection.execute(
+            "CREATE UNIQUE INDEX IF NOT EXISTS idx_users_email_unique "
+            "ON users(email) WHERE email IS NOT NULL"
+        )
 
 
 def _ensure_column(connection, table_name: str, column_name: str, column_definition: str):
@@ -79,11 +104,25 @@ def current_user():
     return fetch_one("SELECT * FROM users WHERE id = ?", (user_id,))
 
 
-def login_required(view_function):
+def session_user_required(view_function):
     @wraps(view_function)
     def wrapped_view(*args, **kwargs):
         if current_user() is None:
             return redirect(url_for("login"))
+        return view_function(*args, **kwargs)
+
+    return wrapped_view
+
+
+def login_required(view_function):
+    @wraps(view_function)
+    def wrapped_view(*args, **kwargs):
+        user = current_user()
+        if user is None:
+            return redirect(url_for("login"))
+        if not user["email_verified"]:
+            flash("Please verify your email address before continuing.")
+            return redirect(url_for("setup_email"))
         return view_function(*args, **kwargs)
 
     return wrapped_view
@@ -95,32 +134,161 @@ def ensure_default_balance(user_id: int):
         connection.commit()
 
 
-def create_user_if_needed(username: str, password: str):
-    user = fetch_one("SELECT * FROM users WHERE username = ?", (username,))
-    if user is not None:
-        stored_password = user["password"]
-        if stored_password.startswith("pbkdf2:") or stored_password.startswith("scrypt:"):
-            if not check_password_hash(stored_password, password):
-                raise ValueError("Invalid password")
-        elif stored_password != password:
-            raise ValueError("Invalid password")
-        else:
-            with get_db_connection() as connection:
-                connection.execute(
-                    "UPDATE users SET password = ? WHERE id = ?",
-                    (generate_password_hash(password), user["id"]),
-                )
-                connection.commit()
-        return user["id"]
+def validate_email(email: str) -> str:
+    email = email.strip().lower()
+    if not EMAIL_RE.fullmatch(email):
+        raise ValueError("Please enter a valid email address.")
+    return email
+
+
+def create_verification_token():
+    raw_token = secrets.token_urlsafe(32)
+    token_hash = hashlib.sha256(raw_token.encode("utf-8")).hexdigest()
+    expires_at = int(time.time()) + VERIFICATION_TOKEN_TTL
+    return raw_token, token_hash, expires_at
+
+
+def send_verification_email(email: str, username: str, raw_token: str):
+    if not BETSHIP_EMAIL:
+        raise RuntimeError("BETSHIP_EMAIL is not configured.")
+
+    verification_url = f"{BETSHIP_BASE_URL}/verify-email/{raw_token}"
+
+    message = f"""From: {BETSHIP_EMAIL}
+To: {email}
+Subject: Verify your Betship account
+Content-Type: text/plain; charset=UTF-8
+
+Hello {username},
+
+Welcome to Betship.
+
+Please verify your email address by opening this link:
+
+{verification_url}
+
+This link expires in 1 hour.
+
+If you did not create a Betship account, you can ignore this email.
+
+Betship
+"""
+
+    try:
+        subprocess.run(
+            ["msmtp", "-t"],
+            input=message,
+            text=True,
+            check=True,
+            capture_output=True,
+        )
+    except FileNotFoundError as error:
+        raise RuntimeError("msmtp is not installed or is not in PATH.") from error
+    except subprocess.CalledProcessError as error:
+        detail = error.stderr.strip() if error.stderr else "msmtp returned an error."
+        raise RuntimeError(f"Could not send verification email: {detail}") from error
+
+
+def create_verification_for_user(user_id: int):
+    user = fetch_one("SELECT id, username, email FROM users WHERE id = ?", (user_id,))
+    if user is None:
+        raise ValueError("User not found.")
+    if not user["email"]:
+        raise ValueError("An email address is required.")
+    if user["email_verified"]:
+        return
+
+    raw_token, token_hash, expires_at = create_verification_token()
 
     with get_db_connection() as connection:
-        cursor = connection.execute(
-            "INSERT INTO users (username, password, balance) VALUES (?, ?, 1000)",
-            (username, generate_password_hash(password),),
+        connection.execute(
+            """
+            UPDATE users
+            SET verification_token_hash = ?,
+                verification_expires_at = ?
+            WHERE id = ?
+            """,
+            (token_hash, expires_at, user_id),
         )
         connection.commit()
-        return cursor.lastrowid
 
+    send_verification_email(user["email"], user["username"], raw_token)
+
+
+def register_user(username: str, email: str, password: str):
+    username = username.strip()
+    email = validate_email(email)
+
+    if not username:
+        raise ValueError("Username is required.")
+    if not password:
+        raise ValueError("Password is required.")
+
+    raw_token, token_hash, expires_at = create_verification_token()
+
+    with get_db_connection() as connection:
+        existing_user = connection.execute(
+            "SELECT id FROM users WHERE username = ? OR email = ?",
+            (username, email),
+        ).fetchone()
+        if existing_user is not None:
+            raise ValueError("Username or email is already registered.")
+
+        cursor = connection.execute(
+            """
+            INSERT INTO users (
+                username,
+                password,
+                balance,
+                email,
+                email_verified,
+                verification_token_hash,
+                verification_expires_at
+            )
+            VALUES (?, ?, 1000, ?, 0, ?, ?)
+            """,
+            (
+                username,
+                generate_password_hash(password),
+                email,
+                token_hash,
+                expires_at,
+            ),
+        )
+        connection.commit()
+        user_id = cursor.lastrowid
+
+    try:
+        send_verification_email(email, username, raw_token)
+    except RuntimeError as error:
+        raise RuntimeError(
+            "Your account was created, but the verification email could not be sent. "
+            "Please use the resend option."
+        ) from error
+
+    return user_id
+
+
+def authenticate_user(username: str, password: str):
+    user = fetch_one("SELECT * FROM users WHERE username = ?", (username,))
+    if user is None:
+        return None
+
+    stored_password = user["password"]
+    if stored_password.startswith(("pbkdf2:", "scrypt:")):
+        if not check_password_hash(stored_password, password):
+            return None
+    elif stored_password == password:
+        with get_db_connection() as connection:
+            connection.execute(
+                "UPDATE users SET password = ? WHERE id = ?",
+                (generate_password_hash(password), user["id"]),
+            )
+            connection.commit()
+    else:
+        return None
+
+    return fetch_one("SELECT * FROM users WHERE id = ?", (user["id"],))
 
 def update_user_profile(user_id: int, username: str, password: str | None = None):
     username = username.strip()
@@ -175,7 +343,17 @@ def delete_account(user_id: int):
             connection.execute("UPDATE users SET balance = balance + ? WHERE id = ?", (wager["amount_betted"], wager["us_id"]))
             connection.execute("DELETE FROM wagers WHERE id = ?", (wager_id,))
         connection.execute(
-            "UPDATE users SET username = ?, password = ?, balance = 0 WHERE id = ?",
+            """
+            UPDATE users
+            SET username = ?,
+                password = ?,
+                balance = 0,
+                email = NULL,
+                email_verified = 0,
+                verification_token_hash = NULL,
+                verification_expires_at = NULL
+            WHERE id = ?
+            """,
             (f"deleted-user-{user_id}", generate_password_hash("deleted"), user_id),
         )
         connection.commit()
@@ -386,25 +564,177 @@ def hello():
     return render_template("home.html", user=user, open_bets=bets, created_bets=created_bets)
 
 
+@app.route("/register", methods=["GET", "POST"])
+def register():
+    if current_user() is not None:
+        return redirect(url_for("hello"))
+
+    if request.method == "POST":
+        username = request.form.get("username", "").strip()
+        email = request.form.get("email", "").strip().lower()
+        password = request.form.get("password", "")
+
+        try:
+            register_user(username, email, password)
+        except ValueError as error:
+            flash(str(error))
+            return render_template("register.html", user=None)
+        except RuntimeError as error:
+            flash(str(error))
+            return redirect(url_for("resend_verification"))
+
+        flash("Account created. Check your email to verify your account.")
+        return redirect(url_for("login"))
+
+    return render_template("register.html", user=None)
+
+
 @app.route("/login", methods=["GET", "POST"])
 def login():
     if request.method == "POST":
-        username = request.form["username"].strip()
-        password = request.form["password"].strip()
+        username = request.form.get("username", "").strip()
+        password = request.form.get("password", "")
+
         if not username or not password:
             flash("Username and password are required.")
             return render_template("login.html", user=current_user())
 
-        try:
-            user_id = create_user_if_needed(username, password)
-        except ValueError as error:
-            flash(str(error))
+        user = authenticate_user(username, password)
+        if user is None:
+            flash("Invalid username or password.")
             return render_template("login.html", user=current_user())
 
-        session["user_id"] = user_id
+        if not user["email"]:
+            session["user_id"] = user["id"]
+            flash("Please add an email address to your account.")
+            return redirect(url_for("setup_email"))
+
+        if not user["email_verified"]:
+            flash("Please verify your email address before logging in.")
+            return redirect(url_for("resend_verification"))
+
+        session["user_id"] = user["id"]
         return redirect(url_for("hello"))
 
     return render_template("login.html", user=current_user())
+
+
+@app.route("/setup-email", methods=["GET", "POST"])
+@session_user_required
+def setup_email():
+    user = current_user()
+
+    if user["email"] and user["email_verified"]:
+        return redirect(url_for("hello"))
+
+    if request.method == "POST":
+        try:
+            email = validate_email(request.form.get("email", ""))
+        except ValueError as error:
+            flash(str(error))
+            return render_template("setup_email.html", user=current_user())
+
+        existing_user = fetch_one(
+            "SELECT id FROM users WHERE email = ? AND id != ?",
+            (email, user["id"]),
+        )
+        if existing_user is not None:
+            flash("That email address is already registered.")
+            return render_template("setup_email.html", user=current_user())
+
+        with get_db_connection() as connection:
+            connection.execute(
+                """
+                UPDATE users
+                SET email = ?,
+                    email_verified = 0,
+                    verification_token_hash = NULL,
+                    verification_expires_at = NULL
+                WHERE id = ?
+                """,
+                (email, user["id"]),
+            )
+            connection.commit()
+
+        try:
+            create_verification_for_user(user["id"])
+        except RuntimeError as error:
+            flash(str(error))
+            return render_template("setup_email.html", user=current_user())
+
+        session.pop("user_id", None)
+        flash("Verification email sent. Check your inbox before logging in.")
+        return redirect(url_for("login"))
+
+    return render_template("setup_email.html", user=user)
+
+
+@app.route("/verify-email/<token>")
+def verify_email(token):
+    token_hash = hashlib.sha256(token.encode("utf-8")).hexdigest()
+    now = int(time.time())
+
+    user = fetch_one(
+        """
+        SELECT id
+        FROM users
+        WHERE verification_token_hash = ?
+          AND verification_expires_at > ?
+          AND email_verified = 0
+        """,
+        (token_hash, now),
+    )
+
+    if user is None:
+        flash("This verification link is invalid or has expired.")
+        return redirect(url_for("resend_verification"))
+
+    with get_db_connection() as connection:
+        connection.execute(
+            """
+            UPDATE users
+            SET email_verified = 1,
+                verification_token_hash = NULL,
+                verification_expires_at = NULL
+            WHERE id = ?
+            """,
+            (user["id"],),
+        )
+        connection.commit()
+
+    flash("Your email has been verified. You can now log in.")
+    return redirect(url_for("login"))
+
+
+@app.route("/resend-verification", methods=["GET", "POST"])
+def resend_verification():
+    if request.method == "POST":
+        email = request.form.get("email", "").strip().lower()
+
+        if EMAIL_RE.fullmatch(email):
+            user = fetch_one(
+                """
+                SELECT id
+                FROM users
+                WHERE email = ?
+                  AND email_verified = 0
+                """,
+                (email,),
+            )
+
+            if user is not None:
+                try:
+                    create_verification_for_user(user["id"])
+                except RuntimeError:
+                    pass
+
+        flash(
+            "If an unverified account exists for that email address, "
+            "a new verification link has been sent."
+        )
+        return redirect(url_for("login"))
+
+    return render_template("resend_verification.html", user=current_user())
 
 
 @app.route("/logout", methods=["POST"])
@@ -639,4 +969,4 @@ init_db()
 
 
 if __name__ == '__main__':
-    app.run(debug=True)
+    app.run(debug=os.environ.get("FLASK_DEBUG") == "1")
