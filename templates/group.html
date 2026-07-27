@@ -1,0 +1,59 @@
+{% extends 'base.html' %}
+{% block title %}group | Betship{% endblock %}
+{% block content %}
+{% if group %}
+<div class="grid grid-2">
+    <section class="card">
+        <span class="pill">Your group</span>
+        <h2>{{ group.name }}</h2>
+        <p class="muted">Share this code with people you want to join your group.</p>
+        <div class="stat">
+            <span class="muted">Join code</span>
+            <span class="value" style="letter-spacing: 0.12em;">{{ group.code }}</span>
+        </div>
+        <form method="post" action="{{ url_for('group_leave') }}" style="margin-top: 18px;" onsubmit="return confirm('Leave this group? You will no longer see its members or bets.');">
+            <button class="button button-danger" type="submit">Leave group</button>
+        </form>
+    </section>
+
+    <section class="card soft">
+        <h3>Members</h3>
+        <div class="compact-list">
+            {% for member in members %}
+            <div class="compact-item">
+                <strong>{{ member.username }}</strong>
+            </div>
+            {% endfor %}
+        </div>
+    </section>
+</div>
+{% else %}
+<div class="grid grid-2">
+    <section class="card">
+        <span class="pill">Create a group</span>
+        <h2>Start your own group</h2>
+        <p class="muted">Create a private group and share the generated code with your friends.</p>
+        <form class="form-grid" method="post" action="{{ url_for('group_create') }}">
+            <label>
+                group name
+                <input type="text" name="name" maxlength="40" placeholder="Example: Weekend Crew" required>
+            </label>
+            <input class="button button-primary" type="submit" value="Create group">
+        </form>
+    </section>
+
+    <section class="card soft">
+        <span class="pill">Join a group</span>
+        <h2>Enter a group code</h2>
+        <p class="muted">Use the 8-character code shared by a group member.</p>
+        <form class="form-grid" method="post" action="{{ url_for('group_join') }}">
+            <label>
+                group code
+                <input type="text" name="code" maxlength="8" placeholder="AB12CD34" required>
+            </label>
+            <input class="button button-secondary" type="submit" value="Join group">
+        </form>
+    </section>
+</div>
+{% endif %}
+{% endblock %}

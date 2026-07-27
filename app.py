@@ -72,6 +72,23 @@ def init_db():
                 FOREIGN KEY (us_id) REFERENCES users (id),
                 FOREIGN KEY (bet_id) REFERENCES bets (id)
             );
+
+            CREATE TABLE IF NOT EXISTS groups (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                name TEXT NOT NULL,
+                code TEXT NOT NULL UNIQUE,
+                created_by INTEGER NOT NULL,
+                FOREIGN KEY (created_by) REFERENCES users (id)
+            );
+
+            CREATE TABLE IF NOT EXISTS group_members (
+                group_id INTEGER NOT NULL,
+                user_id INTEGER NOT NULL UNIQUE,
+                joined_at INTEGER NOT NULL DEFAULT (strftime('%s', 'now')),
+                PRIMARY KEY (group_id, user_id),
+                FOREIGN KEY (group_id) REFERENCES groups (id),
+                FOREIGN KEY (user_id) REFERENCES users (id)
+            );
             """
         )
         _ensure_column(connection, "bets", "title", "TEXT NOT NULL DEFAULT ''")
@@ -100,6 +117,55 @@ def fetch_one(query: str, parameters: tuple = ()):
 def fetch_all(query: str, parameters: tuple = ()):
     with get_db_connection() as connection:
         return connection.execute(query, parameters).fetchall()
+
+
+def get_user_group(user_id: int):
+    return fetch_one(
+        """
+        SELECT groups.*, group_members.joined_at
+        FROM group_members
+        JOIN groups ON groups.id = group_members.group_id
+        WHERE group_members.user_id = ?
+        """,
+        (user_id,),
+    )
+
+
+def get_visible_bets(user_id: int):
+    return fetch_all(
+        """
+        SELECT bets.*, users.username AS creator_name
+        FROM bets
+        JOIN users ON users.id = bets.creator
+        JOIN group_members cm ON cm.user_id = bets.creator
+        JOIN group_members viewer_cm ON viewer_cm.group_id = cm.group_id
+        WHERE viewer_cm.user_id = ?
+        ORDER BY bets.id DESC
+        """,
+        (user_id,),
+    )
+
+
+def get_bet_if_visible(bet_id: int, user_id: int):
+    return fetch_one(
+        """
+        SELECT bets.*, users.username AS creator_name
+        FROM bets
+        JOIN users ON users.id = bets.creator
+        JOIN group_members cm ON cm.user_id = bets.creator
+        JOIN group_members viewer_cm ON viewer_cm.group_id = cm.group_id
+        WHERE bets.id = ? AND viewer_cm.user_id = ?
+        """,
+        (bet_id, user_id),
+    )
+
+
+def generate_group_code() -> str:
+    alphabet = string.ascii_uppercase + string.digits
+    while True:
+        code = "".join(secrets.choice(alphabet) for _ in range(8))
+        if fetch_one("SELECT 1 FROM groups WHERE code = ?", (code,)) is None:
+            return code
 
 
 def current_user():
@@ -347,6 +413,7 @@ def delete_account(user_id: int):
                 continue
             connection.execute("UPDATE users SET balance = balance + ? WHERE id = ?", (wager["amount_betted"], wager["us_id"]))
             connection.execute("DELETE FROM wagers WHERE id = ?", (wager_id,))
+        connection.execute("DELETE FROM group_members WHERE user_id = ?", (user_id,))
         connection.execute(
             """
             UPDATE users
@@ -377,6 +444,8 @@ def generate_odds(more_feasible_result: str):
 
 
 def create_bet(creator_id: int, title: str, description: str, more_feasible_result: str):
+    if get_user_group(creator_id) is None:
+        raise ValueError("Join or create a group before creating a bet.")
     title = title.strip()
     if not title:
         raise ValueError("Bet title is required")
@@ -515,42 +584,29 @@ def get_profile_data(user_id: int):
     return created_bets, wagers
 
 
-def get_bets(exclude_creator_id: int | None = None):
-    if exclude_creator_id is None:
+def get_bets(user_id: int | None = None):
+    if user_id is None:
         return fetch_all(
-            """
-            SELECT bets.*, users.username AS creator_name
-            FROM bets
-            JOIN users ON users.id = bets.creator
-            ORDER BY bets.id DESC
-            """
+            "SELECT bets.*, users.username AS creator_name FROM bets JOIN users ON users.id = bets.creator ORDER BY bets.id DESC"
         )
-
-    return fetch_all(
-        """
-        SELECT bets.*, users.username AS creator_name
-        FROM bets
-        JOIN users ON users.id = bets.creator
-        WHERE bets.creator != ?
-        ORDER BY bets.id DESC
-        """,
-        (exclude_creator_id,),
-    )
+    return get_visible_bets(user_id)
 
 
-def get_bet_detail(bet_id: int):
-    bet = fetch_one(
-        """
-        SELECT bets.*, users.username AS creator_name
-        FROM bets
-        JOIN users ON users.id = bets.creator
-        WHERE bets.id = ?
-        """,
-        (bet_id,),
-    )
+def get_bet_detail(bet_id: int, user_id: int):
+    bet = get_bet_if_visible(bet_id, user_id)
+    if bet is None:
+        return None, []
     wagers = fetch_all(
-        "SELECT wagers.*, users.username FROM wagers JOIN users ON users.id = wagers.us_id WHERE bet_id = ? ORDER BY wagers.id DESC",
-        (bet_id,),
+        """
+        SELECT wagers.*, users.username
+        FROM wagers
+        JOIN users ON users.id = wagers.us_id
+        JOIN group_members wager_cm ON wager_cm.user_id = wagers.us_id
+        JOIN group_members bet_cm ON bet_cm.group_id = wager_cm.group_id
+        WHERE wagers.bet_id = ? AND bet_cm.user_id = ?
+        ORDER BY wagers.id DESC
+        """,
+        (bet_id, user_id),
     )
     return bet, wagers
 
@@ -827,15 +883,126 @@ def profile_delete():
 @app.route("/users")
 @login_required
 def users_page():
-    users = fetch_all(
-        "SELECT username, balance FROM users ORDER BY balance DESC, username ASC"
-    )
-    return render_template("users.html", user=current_user(), users=users)
+    user = current_user()
+    group = get_user_group(user["id"])
+    if group is None:
+        users = []
+    else:
+        users = fetch_all(
+            """
+            SELECT users.username, users.balance
+            FROM users
+            JOIN group_members ON group_members.user_id = users.id
+            WHERE group_members.group_id = ?
+            ORDER BY users.balance DESC, users.username ASC
+            """,
+            (group["id"],),
+        )
+    return render_template("users.html", user=user, users=users, group=group)
+
+
+@app.route("/group")
+@login_required
+def group_page():
+    user = current_user()
+    group = get_user_group(user["id"])
+    members = []
+    if group is not None:
+        members = fetch_all(
+            """
+            SELECT users.username, users.id
+            FROM users
+            JOIN group_members ON group_members.user_id = users.id
+            WHERE group_members.group_id = ?
+            ORDER BY users.username ASC
+            """,
+            (group["id"],),
+        )
+    return render_template("group.html", user=user, group=group, members=members)
+
+
+@app.route("/group/create", methods=["POST"])
+@login_required
+def group_create():
+    user = current_user()
+    if get_user_group(user["id"]) is not None:
+        flash("You are already in a group. Leave your current group before creating another.")
+        return redirect(url_for("group_page"))
+
+    name = request.form.get("name", "").strip()
+    if not name:
+        flash("group name is required.")
+        return redirect(url_for("group_page"))
+    if len(name) > 40:
+        flash("group name must be 40 characters or fewer.")
+        return redirect(url_for("group_page"))
+
+    code = generate_group_code()
+    with get_db_connection() as connection:
+        cursor = connection.execute(
+            "INSERT INTO groups (name, code, created_by) VALUES (?, ?, ?)",
+            (name, code, user["id"]),
+        )
+        connection.execute(
+            "INSERT INTO group_members (group_id, user_id) VALUES (?, ?)",
+            (cursor.lastrowid, user["id"]),
+        )
+        connection.commit()
+    flash(f"group created. Your join code is {code}.")
+    return redirect(url_for("group_page"))
+
+
+@app.route("/group/join", methods=["POST"])
+@login_required
+def group_join():
+    user = current_user()
+    if get_user_group(user["id"]) is not None:
+        flash("You are already in a group. Leave your current group before joining another.")
+        return redirect(url_for("group_page"))
+
+    code = request.form.get("code", "").strip().upper()
+    group = fetch_one("SELECT * FROM groups WHERE code = ?", (code,))
+    if group is None:
+        flash("Invalid group code.")
+        return redirect(url_for("group_page"))
+
+    with get_db_connection() as connection:
+        connection.execute(
+            "INSERT INTO group_members (group_id, user_id) VALUES (?, ?)",
+            (group["id"], user["id"]),
+        )
+        connection.commit()
+    flash(f"You joined {group['name']}.")
+    return redirect(url_for("group_page"))
+
+
+@app.route("/group/leave", methods=["POST"])
+@login_required
+def group_leave():
+    user = current_user()
+    group = get_user_group(user["id"])
+    if group is None:
+        flash("You are not in a group.")
+        return redirect(url_for("group_page"))
+
+    with get_db_connection() as connection:
+        connection.execute(
+            "DELETE FROM group_members WHERE group_id = ? AND user_id = ?",
+            (group["id"], user["id"]),
+        )
+        connection.commit()
+    flash(f"You left {group['name']}.")
+    return redirect(url_for("group_page"))
 
 
 @app.route("/create-bet", methods=["GET", "POST"])
 @login_required
 def create_bet_page():
+    user = current_user()
+    if get_user_group(user["id"]) is None:
+        flash("Join or create a group before creating a bet.")
+        return redirect(url_for("group_page"))
+
     if request.method == "POST":
         title = request.form["title"].strip()
         description = request.form["description"].strip()
@@ -861,7 +1028,7 @@ def bets_list():
 @app.route("/bets/<int:bet_id>", methods=["GET", "POST"])
 @login_required
 def bet_detail(bet_id: int):
-    bet, wagers = get_bet_detail(bet_id)
+    bet, wagers = get_bet_detail(bet_id, current_user()["id"])
     if bet is None:
         abort(404)
 
