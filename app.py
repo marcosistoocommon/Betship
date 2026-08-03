@@ -348,7 +348,7 @@ Betship
 
 
 def create_verification_for_user(user_id: int):
-    user = fetch_one("SELECT id, username, email FROM users WHERE id = ?", (user_id,))
+    user = fetch_one("SELECT id, username, email, email_verified FROM users WHERE id = ?", (user_id,))
     if user is None:
         raise ValueError("User not found.")
     if not user["email"]:
