@@ -6,6 +6,7 @@ import secrets
 import sqlite3
 import subprocess
 import time
+from contextlib import contextmanager
 from pathlib import Path
 from functools import wraps
 import string
@@ -30,11 +31,19 @@ VERIFICATION_TOKEN_TTL = 60 * 60
 EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
 
 
+@contextmanager
 def get_db_connection():
     connection = sqlite3.connect(DATABASE_PATH)
     connection.row_factory = sqlite3.Row
     connection.execute("PRAGMA foreign_keys = ON")
-    return connection
+    try:
+        yield connection
+        connection.commit()
+    except Exception:
+        connection.rollback()
+        raise
+    finally:
+        connection.close()
 
 
 def init_db():
@@ -84,7 +93,7 @@ def init_db():
 
             CREATE TABLE IF NOT EXISTS group_members (
                 group_id INTEGER NOT NULL,
-                user_id INTEGER NOT NULL UNIQUE,
+                user_id INTEGER NOT NULL,
                 joined_at INTEGER NOT NULL DEFAULT (strftime('%s', 'now')),
                 PRIMARY KEY (group_id, user_id),
                 FOREIGN KEY (group_id) REFERENCES groups (id),
@@ -92,12 +101,30 @@ def init_db():
             );
             """
         )
+        _migrate_group_members_schema(connection)
         _ensure_column(connection, "bets", "title", "TEXT NOT NULL DEFAULT ''")
         _ensure_column(connection, "bets", "description", "TEXT DEFAULT ''")
+        _ensure_column(connection, "bets", "group_id", "INTEGER")
         _ensure_column(connection, "users", "email", "TEXT")
         _ensure_column(connection, "users", "email_verified", "INTEGER NOT NULL DEFAULT 0")
         _ensure_column(connection, "users", "verification_token_hash", "TEXT")
         _ensure_column(connection, "users", "verification_expires_at", "INTEGER")
+        connection.execute(
+            """
+            UPDATE bets
+            SET group_id = (
+                SELECT group_members.group_id
+                FROM group_members
+                WHERE group_members.user_id = bets.creator
+                ORDER BY group_members.group_id
+                LIMIT 1
+            )
+            WHERE bets.group_id IS NULL
+              AND EXISTS (
+                  SELECT 1 FROM group_members WHERE group_members.user_id = bets.creator
+              )
+            """
+        )
         connection.execute(
             "CREATE UNIQUE INDEX IF NOT EXISTS idx_users_email_unique "
             "ON users(email) WHERE email IS NOT NULL"
@@ -110,6 +137,42 @@ def _ensure_column(connection, table_name: str, column_name: str, column_definit
         connection.execute(f"ALTER TABLE {table_name} ADD COLUMN {column_name} {column_definition}")
 
 
+def _migrate_group_members_schema(connection):
+    table_exists = connection.execute(
+        "SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'group_members'"
+    ).fetchone()
+    if table_exists is None:
+        return
+
+    existing_table = connection.execute(
+        "SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'group_members_old'"
+    ).fetchone()
+    if existing_table is not None:
+        connection.execute("DROP TABLE group_members_old")
+
+    connection.execute("ALTER TABLE group_members RENAME TO group_members_old")
+    connection.execute(
+        """
+        CREATE TABLE group_members (
+            group_id INTEGER NOT NULL,
+            user_id INTEGER NOT NULL,
+            joined_at INTEGER NOT NULL DEFAULT (strftime('%s', 'now')),
+            PRIMARY KEY (group_id, user_id),
+            FOREIGN KEY (group_id) REFERENCES groups (id),
+            FOREIGN KEY (user_id) REFERENCES users (id)
+        )
+        """
+    )
+    connection.execute(
+        """
+        INSERT INTO group_members (group_id, user_id, joined_at)
+        SELECT group_id, user_id, joined_at FROM group_members_old
+        """
+    )
+    connection.execute("DROP TABLE group_members_old")
+    connection.commit()
+
+
 def fetch_one(query: str, parameters: tuple = ()):
     with get_db_connection() as connection:
         return connection.execute(query, parameters).fetchone()
@@ -120,45 +183,68 @@ def fetch_all(query: str, parameters: tuple = ()):
         return connection.execute(query, parameters).fetchall()
 
 
-def get_user_group(user_id: int):
-    return fetch_one(
+def get_user_groups(user_id: int):
+    return fetch_all(
         """
         SELECT groups.*, group_members.joined_at
         FROM group_members
         JOIN groups ON groups.id = group_members.group_id
         WHERE group_members.user_id = ?
+        ORDER BY groups.name ASC
         """,
         (user_id,),
     )
 
 
-def get_visible_bets(user_id: int):
-    return fetch_all(
-        """
-        SELECT bets.*, users.username AS creator_name
-        FROM bets
-        JOIN users ON users.id = bets.creator
-        JOIN group_members cm ON cm.user_id = bets.creator
-        JOIN group_members viewer_cm ON viewer_cm.group_id = cm.group_id
-        WHERE viewer_cm.user_id = ?
-        ORDER BY bets.id DESC
-        """,
-        (user_id,),
-    )
+def get_user_group(user_id: int):
+    groups = get_user_groups(user_id)
+    return groups[0] if groups else None
 
 
-def get_bet_if_visible(bet_id: int, user_id: int):
+def get_user_group_membership(user_id: int, group_id: int):
     return fetch_one(
-        """
+        "SELECT 1 FROM group_members WHERE user_id = ? AND group_id = ?",
+        (user_id, group_id),
+    )
+
+
+def get_selected_group(user_id: int, group_id: int | None = None):
+    groups = get_user_groups(user_id)
+    if not groups:
+        return None
+    if group_id is None:
+        return groups[0]
+    return next((group for group in groups if group["id"] == group_id), None)
+
+
+def get_visible_bets(user_id: int, group_id: int | None = None):
+    query = """
         SELECT bets.*, users.username AS creator_name
         FROM bets
         JOIN users ON users.id = bets.creator
-        JOIN group_members cm ON cm.user_id = bets.creator
-        JOIN group_members viewer_cm ON viewer_cm.group_id = cm.group_id
-        WHERE bets.id = ? AND viewer_cm.user_id = ?
-        """,
-        (bet_id, user_id),
-    )
+        JOIN group_members viewer_cm ON viewer_cm.group_id = bets.group_id AND viewer_cm.user_id = ?
+    """
+    parameters: tuple = (user_id,)
+    if group_id is not None:
+        query += " WHERE bets.group_id = ?"
+        parameters = (user_id, group_id)
+    query += " ORDER BY bets.id DESC"
+    return fetch_all(query, parameters)
+
+
+def get_bet_if_visible(bet_id: int, user_id: int, group_id: int | None = None):
+    query = """
+        SELECT bets.*, users.username AS creator_name
+        FROM bets
+        JOIN users ON users.id = bets.creator
+        JOIN group_members viewer_cm ON viewer_cm.group_id = bets.group_id AND viewer_cm.user_id = ?
+        WHERE bets.id = ?
+    """
+    parameters: tuple = (user_id, bet_id)
+    if group_id is not None:
+        query += " AND bets.group_id = ?"
+        parameters = (user_id, bet_id, group_id)
+    return fetch_one(query, parameters)
 
 
 def generate_group_code() -> str:
@@ -444,9 +530,22 @@ def generate_odds(more_feasible_result: str):
     return higher_odds, lower_odds
 
 
-def create_bet(creator_id: int, title: str, description: str, more_feasible_result: str):
-    if get_user_group(creator_id) is None:
+def create_bet(
+    creator_id: int,
+    title: str,
+    description: str,
+    more_feasible_result: str,
+    group_id: int | None = None,
+):
+    user_groups = get_user_groups(creator_id)
+    if not user_groups:
         raise ValueError("Join or create a group before creating a bet.")
+
+    if group_id is None:
+        group_id = user_groups[0]["id"] if len(user_groups) == 1 else None
+    if group_id is None or get_user_group_membership(creator_id, group_id) is None:
+        raise ValueError("Select a valid group before creating a bet.")
+
     title = title.strip()
     if not title:
         raise ValueError("Bet title is required")
@@ -456,10 +555,10 @@ def create_bet(creator_id: int, title: str, description: str, more_feasible_resu
     with get_db_connection() as connection:
         cursor = connection.execute(
             """
-            INSERT INTO bets (creator, title, description, yesodds, noodds)
-            VALUES (?, ?, ?, ?, ?)
+            INSERT INTO bets (creator, title, description, yesodds, noodds, group_id)
+            VALUES (?, ?, ?, ?, ?, ?)
             """,
-            (creator_id, title, description, yesodds, noodds),
+            (creator_id, title, description, yesodds, noodds, group_id),
         )
         connection.commit()
         return cursor.lastrowid, yesodds, noodds
@@ -585,16 +684,16 @@ def get_profile_data(user_id: int):
     return created_bets, wagers
 
 
-def get_bets(user_id: int | None = None):
+def get_bets(user_id: int | None = None, group_id: int | None = None):
     if user_id is None:
         return fetch_all(
             "SELECT bets.*, users.username AS creator_name FROM bets JOIN users ON users.id = bets.creator ORDER BY bets.id DESC"
         )
-    return get_visible_bets(user_id)
+    return get_visible_bets(user_id, group_id=group_id)
 
 
-def get_bet_detail(bet_id: int, user_id: int):
-    bet = get_bet_if_visible(bet_id, user_id)
+def get_bet_detail(bet_id: int, user_id: int, group_id: int | None = None):
+    bet = get_bet_if_visible(bet_id, user_id, group_id=group_id)
     if bet is None:
         return None, []
     wagers = fetch_all(
@@ -604,10 +703,10 @@ def get_bet_detail(bet_id: int, user_id: int):
         JOIN users ON users.id = wagers.us_id
         JOIN group_members wager_cm ON wager_cm.user_id = wagers.us_id
         JOIN group_members bet_cm ON bet_cm.group_id = wager_cm.group_id
-        WHERE wagers.bet_id = ? AND bet_cm.user_id = ?
+        WHERE wagers.bet_id = ? AND bet_cm.user_id = ? AND wager_cm.group_id = ?
         ORDER BY wagers.id DESC
         """,
-        (bet_id, user_id),
+        (bet_id, user_id, bet["group_id"]),
     )
     return bet, wagers
 
@@ -618,12 +717,30 @@ def hello():
     if user is None:
         return redirect(url_for("login"))
 
-    bets = get_bets(user["id"])
-    created_bets = fetch_all(
-        "SELECT * FROM bets WHERE creator = ? ORDER BY id DESC",
-        (user["id"],),
+    groups = get_user_groups(user["id"])
+    selected_group_id = request.args.get("group_id", type=int)
+    selected_group = get_selected_group(user["id"], selected_group_id)
+    if selected_group is None and groups:
+        selected_group = groups[0]
+
+    if selected_group is None:
+        bets = []
+        created_bets = []
+    else:
+        bets = get_bets(user["id"], group_id=selected_group["id"])
+        created_bets = fetch_all(
+            "SELECT * FROM bets WHERE creator = ? AND group_id = ? ORDER BY id DESC",
+            (user["id"], selected_group["id"]),
+        )
+
+    return render_template(
+        "home.html",
+        user=user,
+        open_bets=bets,
+        created_bets=created_bets,
+        groups=groups,
+        selected_group=selected_group,
     )
-    return render_template("home.html", user=user, open_bets=bets, created_bets=created_bets)
 
 
 @app.route("/register", methods=["GET", "POST"])
@@ -885,30 +1002,35 @@ def profile_delete():
 @login_required
 def users_page():
     user = current_user()
-    group = get_user_group(user["id"])
-    if group is None:
+    groups = get_user_groups(user["id"])
+    selected_group_id = request.args.get("group_id", type=int)
+    selected_group = get_selected_group(user["id"], selected_group_id)
+    if selected_group is None and groups:
+        selected_group = groups[0]
+
+    if not selected_group:
         users = []
     else:
         users = fetch_all(
             """
-            SELECT users.username, users.balance
+            SELECT DISTINCT users.username, users.balance
             FROM users
             JOIN group_members ON group_members.user_id = users.id
             WHERE group_members.group_id = ?
             ORDER BY users.balance DESC, users.username ASC
             """,
-            (group["id"],),
+            (selected_group["id"],),
         )
-    return render_template("users.html", user=user, users=users, group=group)
+    return render_template("users.html", user=user, users=users, group=selected_group, groups=groups)
 
 
 @app.route("/group")
 @login_required
 def group_page():
     user = current_user()
-    group = get_user_group(user["id"])
-    members = []
-    if group is not None:
+    groups = get_user_groups(user["id"])
+    memberships = []
+    for group in groups:
         members = fetch_all(
             """
             SELECT users.username, users.id
@@ -919,16 +1041,14 @@ def group_page():
             """,
             (group["id"],),
         )
-    return render_template("group.html", user=user, group=group, members=members)
+        memberships.append({"group": group, "members": members})
+    return render_template("group.html", user=user, groups=memberships)
 
 
 @app.route("/group/create", methods=["POST"])
 @login_required
 def group_create():
     user = current_user()
-    if get_user_group(user["id"]) is not None:
-        flash("You are already in a group. Leave your current group before creating another.")
-        return redirect(url_for("group_page"))
 
     name = request.form.get("name", "").strip()
     if not name:
@@ -957,9 +1077,6 @@ def group_create():
 @login_required
 def group_join():
     user = current_user()
-    if get_user_group(user["id"]) is not None:
-        flash("You are already in a group. Leave your current group before joining another.")
-        return redirect(url_for("group_page"))
 
     code = request.form.get("code", "").strip().upper()
     group = fetch_one("SELECT * FROM groups WHERE code = ?", (code,))
@@ -981,9 +1098,24 @@ def group_join():
 @login_required
 def group_leave():
     user = current_user()
-    group = get_user_group(user["id"])
+    group_id = request.form.get("group_id", "").strip()
+    group = None
+
+    if group_id:
+        group = fetch_one(
+            """
+            SELECT groups.*, group_members.joined_at
+            FROM group_members
+            JOIN groups ON groups.id = group_members.group_id
+            WHERE group_members.user_id = ? AND groups.id = ?
+            """,
+            (user["id"], int(group_id)),
+        )
+    else:
+        group = get_user_group(user["id"])
+
     if group is None:
-        flash("You are not in a group.")
+        flash("You are not in that group.")
         return redirect(url_for("group_page"))
 
     with get_db_connection() as connection:
@@ -1000,36 +1132,67 @@ def group_leave():
 @login_required
 def create_bet_page():
     user = current_user()
-    if get_user_group(user["id"]) is None:
+    groups = get_user_groups(user["id"])
+    if not groups:
         flash("Join or create a group before creating a bet.")
         return redirect(url_for("group_page"))
+
+    selected_group_id = request.args.get("group_id", type=int) or request.form.get("group_id", type=int)
+    selected_group = get_selected_group(user["id"], selected_group_id)
+    if selected_group is None:
+        selected_group = groups[0]
 
     if request.method == "POST":
         title = request.form["title"].strip()
         description = request.form["description"].strip()
         more_feasible_result = request.form["more_feasible_result"]
+        group_id = request.form.get("group_id", type=int) or selected_group["id"]
         if not title:
             flash("Bet name is required.")
-            return render_template("create_bet.html", user=current_user())
+            return render_template("create_bet.html", user=current_user(), groups=groups, selected_group=selected_group)
 
-        bet_id, yesodds, noodds = create_bet(current_user()["id"], title, description, more_feasible_result)
+        bet_id, yesodds, noodds = create_bet(
+            current_user()["id"],
+            title,
+            description,
+            more_feasible_result,
+            group_id=group_id,
+        )
         flash(f"Bet {bet_id} created.")
-        return redirect(url_for("hello"))
+        return redirect(url_for("hello", group_id=group_id))
 
-    return render_template("create_bet.html", user=current_user())
+    return render_template("create_bet.html", user=current_user(), groups=groups, selected_group=selected_group)
 
 
 @app.route("/bets")
 @login_required
 def bets_list():
     user = current_user()
-    return render_template("make_bet.html", user=user, open_bets=get_bets(user["id"]))
+    groups = get_user_groups(user["id"])
+    selected_group_id = request.args.get("group_id", type=int)
+    selected_group = get_selected_group(user["id"], selected_group_id)
+    if selected_group is None and groups:
+        selected_group = groups[0]
+    return render_template(
+        "make_bet.html",
+        user=user,
+        open_bets=get_bets(user["id"], group_id=selected_group["id"] if selected_group else None),
+        groups=groups,
+        selected_group=selected_group,
+    )
 
 
 @app.route("/bets/<int:bet_id>", methods=["GET", "POST"])
 @login_required
 def bet_detail(bet_id: int):
-    bet, wagers = get_bet_detail(bet_id, current_user()["id"])
+    user = current_user()
+    groups = get_user_groups(user["id"])
+    selected_group_id = request.args.get("group_id", type=int) or request.form.get("group_id", type=int)
+    selected_group = get_selected_group(user["id"], selected_group_id)
+    if selected_group is None and groups:
+        selected_group = groups[0]
+
+    bet, wagers = get_bet_detail(bet_id, user["id"], group_id=selected_group["id"] if selected_group else None)
     if bet is None:
         abort(404)
 
@@ -1039,29 +1202,38 @@ def bet_detail(bet_id: int):
         selected_result = request.form["selected_result"]
         amount_betted = float(request.form["amount_betted"])
         try:
-            place_wager(current_user()["id"], bet_id, selected_result, amount_betted)
+            place_wager(user["id"], bet_id, selected_result, amount_betted)
         except ValueError as error:
             flash(str(error))
-            return render_template("bet_detail.html", user=current_user(), bet=bet, wagers=wagers)
-        return redirect(url_for("profile"))
+            return render_template(
+                "bet_detail.html",
+                user=user,
+                bet=bet,
+                wagers=wagers,
+                groups=groups,
+                selected_group=selected_group,
+            )
+        return redirect(url_for("bet_detail", bet_id=bet_id, group_id=selected_group["id"] if selected_group else None))
 
     expected_yes_win = round(request.args.get("amount", type=float, default=0) * bet["yesodds"], 2)
     expected_no_win = round(request.args.get("amount", type=float, default=0) * bet["noodds"], 2)
     return render_template(
         "bet_detail.html",
-        user=current_user(),
+        user=user,
         bet=bet,
         wagers=wagers if can_view_wagers else [],
         can_view_wagers=can_view_wagers,
         expected_yes_win=expected_yes_win,
         expected_no_win=expected_no_win,
+        groups=groups,
+        selected_group=selected_group,
     )
 
 
 @app.route("/bets/<int:bet_id>/delete", methods=["POST"])
 @login_required
 def bet_delete(bet_id: int):
-    bet = fetch_one("SELECT creator, state FROM bets WHERE id = ?", (bet_id,))
+    bet = fetch_one("SELECT creator, state, group_id FROM bets WHERE id = ?", (bet_id,))
     if bet is None:
         abort(404)
     if bet["creator"] != current_user()["id"]:
@@ -1069,20 +1241,20 @@ def bet_delete(bet_id: int):
     if bet["state"] != "open":
         abort(400, description="Closed bets cannot be deleted")
     delete_bet(bet_id)
-    return redirect(url_for("profile"))
+    return redirect(url_for("hello", group_id=bet["group_id"]))
 
 
 @app.route("/bets/<int:bet_id>/close", methods=["POST"])
 @login_required
 def bet_close(bet_id: int):
-    bet = fetch_one("SELECT creator FROM bets WHERE id = ?", (bet_id,))
+    bet = fetch_one("SELECT creator, group_id FROM bets WHERE id = ?", (bet_id,))
     if bet is None:
         abort(404)
     if bet["creator"] != current_user()["id"]:
         abort(403)
     result = request.form["result"]
     close_bet(bet_id, result)
-    return redirect(url_for("profile"))
+    return redirect(url_for("hello", group_id=bet["group_id"]))
 
 
 @app.route("/wagers/<int:wager_id>/delete", methods=["POST"])
@@ -1111,9 +1283,18 @@ def bets_create():
     more_feasible_result = payload["more_feasible_result"]
     title = payload.get("title", "")
     description = payload.get("description", "")
+    group_id = payload.get("group_id")
+    if group_id is not None:
+        group_id = int(group_id)
 
     try:
-        bet_id, yesodds, noodds = create_bet(creator_id, title, description, more_feasible_result)
+        bet_id, yesodds, noodds = create_bet(
+            creator_id,
+            title,
+            description,
+            more_feasible_result,
+            group_id=group_id,
+        )
     except ValueError as error:
         return jsonify({"error": str(error)}), 400
     return jsonify(
