@@ -1,35 +1,6 @@
 {% extends 'base.html' %}
 {% block title %}group | Betship{% endblock %}
 {% block content %}
-{% if groups %}
-<div class="grid grid-2">
-    {% for membership in groups %}
-    <section class="card">
-        <div class="actions" style="justify-content: space-between; align-items: flex-start;">
-            <div>
-                <h2 style="margin-bottom: 6px;">{{ membership.group.name }}</h2>
-                <p class="muted">Share this code with people you want to join this group.</p>
-            </div>
-            <form method="post" action="{{ url_for('group_leave') }}" onsubmit="return confirm('Leave this group? You will no longer see its members or bets.');">
-                <input type="hidden" name="group_id" value="{{ membership.group.id }}">
-                <button class="button button-danger" type="submit">Leave group</button>
-            </form>
-        </div>
-        <div class="stat" style="margin-top: 12px;">
-            <span class="muted">Join code</span>
-            <span class="value" style="letter-spacing: 0.12em;">{{ membership.group.code }}</span>
-        </div>
-        <div class="compact-list" style="margin-top: 14px;">
-            {% for member in membership.members %}
-            <div class="compact-item">
-                <strong>{{ member.username }}</strong>
-            </div>
-            {% endfor %}
-        </div>
-    </section>
-    {% endfor %}
-</div>
-{% else %}
 <div class="grid grid-2">
     <section class="card">
         <span class="pill">Create a group</span>
@@ -56,6 +27,35 @@
             <input class="button button-secondary" type="submit" value="Join group">
         </form>
     </section>
+</div>
+
+{% if groups %}
+<div class="grid grid-2" style="margin-top: 18px;">
+    {% for membership in groups %}
+    <section class="card">
+        <div class="actions" style="justify-content: space-between; align-items: flex-start;">
+            <div>
+                <h2 style="margin-bottom: 6px;">{{ membership.group.name }}</h2>
+                <p class="muted">Share this code with people you want to join this group.</p>
+            </div>
+            <form method="post" action="{{ url_for('group_leave') }}" onsubmit="return confirm('Leave this group? You will no longer see its members or bets.');">
+                <input type="hidden" name="group_id" value="{{ membership.group.id }}">
+                <button class="button button-danger" type="submit">Leave group</button>
+            </form>
+        </div>
+        <div class="stat" style="margin-top: 12px;">
+            <span class="muted">Join code</span>
+            <span class="value" style="letter-spacing: 0.12em;">{{ membership.group.code }}</span>
+        </div>
+        <div class="compact-list" style="margin-top: 14px;">
+            {% for member in membership.members %}
+            <div class="compact-item">
+                <strong>{{ member.username }}</strong>
+            </div>
+            {% endfor %}
+        </div>
+    </section>
+    {% endfor %}
 </div>
 {% endif %}
 {% endblock %}
