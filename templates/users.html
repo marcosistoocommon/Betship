@@ -2,11 +2,25 @@
 {% block title %}Users | Betship{% endblock %}
 {% block content %}
 <div class="card">
+    {% if groups %}
+    <div class="actions" style="justify-content: space-between; align-items: center; margin-bottom: 16px;">
+        <div>
+            <span class="pill">Current group</span>
+            <strong style="margin-left: 8px;">{{ group.name if group else 'Pick a group' }}</strong>
+        </div>
+        <div class="actions">
+            {% for entry in groups %}
+            <a class="button {% if group and group.id == entry.id %}button-primary{% else %}button-ghost{% endif %}" href="{{ url_for('users_page', group_id=entry.id) }}">{{ entry.name }}</a>
+            {% endfor %}
+        </div>
+    </div>
+    {% endif %}
+
     <div class="actions" style="justify-content: space-between;">
         <div>
             <h2 style="margin-bottom: 0;">Users and balances</h2>
         </div>
-        <a class="button button-ghost" href="{{ url_for('hello') }}">Home</a>
+        <a class="button button-ghost" href="{{ url_for('hello', group_id=group.id if group else None) }}">Home</a>
     </div>
 
     {% if group is none %}
